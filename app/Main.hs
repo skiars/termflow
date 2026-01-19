@@ -18,14 +18,15 @@ main = do
   backend <-
     case args of
       ["--plain"] -> pure plainBackend
-      ["--ansi"] -> pure ansiBackend
-      _          -> detectBackend
+      ["--ansi"]  -> pure ansiBackend
+      _           -> detectBackend
   runFlowWith backend app
 
 app :: FlowT IO ()
 app = do
   info $ green "Initializing Termflow..."
   group (bold "Setup Environment") setupEnvironment
+  demonstrateCallbacks
   info $ bold $ green "Done!"
 
 setupEnvironment :: FlowT IO ()
@@ -145,6 +146,22 @@ realGitClone = step "Real Git Clone (commercialhaskell/stack)" $ do
   case exitCode of
     ExitSuccess -> info $ green "Clone successful!"
     ExitFailure c -> warn $ red $ "Clone failed with code: " <> disp c
+
+-- | Demonstrate calling back into Flow from IO
+demonstrateCallbacks :: FlowT IO ()
+demonstrateCallbacks = step "Demonstrating IO Callbacks" $ do
+  info "Calling an external IO function that calls back into Flow..."
+  withRunFlow $ \run ->
+    liftIO $ simulatedExternalLibrary run
+  info "Callback demonstration complete."
+
+simulatedExternalLibrary :: (FlowT IO () -> IO ()) -> IO ()
+simulatedExternalLibrary runner = do
+  threadDelay 500000
+  runner $ info $ blue "  [Callback] " <> "Inside IO, talking to Termflow!"
+  threadDelay 500000
+  runner $ warn $ yellow "  [Callback] " <> "Even warnings work from here."
+  threadDelay 500000
 
 repeatN :: (Monad m) => Int -> (Int -> m ()) -> m ()
 repeatN n = forM_ [0 .. n - 1]

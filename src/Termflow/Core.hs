@@ -1,11 +1,13 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Termflow.Core
   ( FlowT (..),
     runFlowT,
+    withRunFlow,
   )
 where
 
@@ -46,6 +48,12 @@ instance (MonadReader r m) => MonadReader r (FlowT m) where
 -- | Run the FlowT monad
 runFlowT :: TQueue FlowEvent -> FlowT m a -> m a
 runFlowT q (FlowT m) = runReaderT m q
+
+-- | Capture the current flow runner to execute flow actions within the underlying monad.
+withRunFlow :: (Monad m) => ((forall a. FlowT m a -> m a) -> m b) -> FlowT m b
+withRunFlow inner = do
+  q <- FlowT ask
+  lift $ inner (runFlowT q)
 
 -- | Helper to emit an event
 emit :: (MonadIO m) => FlowEvent -> FlowT m ()
