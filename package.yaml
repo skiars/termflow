@@ -28,6 +28,7 @@ dependencies:
 - mtl
 - stm
 - text-conversions
+- unliftio-core
 - ansi-terminal
 
 ghc-options:

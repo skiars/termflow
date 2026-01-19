@@ -50,6 +50,7 @@ library
     , stm
     , text
     , text-conversions
+    , unliftio-core
   default-language: Haskell2010
 
 executable termflow-exe
@@ -73,6 +74,7 @@ executable termflow-exe
     , termflow
     , text
     , text-conversions
+    , unliftio-core
   default-language: Haskell2010
 
 test-suite termflow-test
@@ -96,4 +98,5 @@ test-suite termflow-test
     , termflow
     , text
     , text-conversions
+    , unliftio-core
   default-language: Haskell2010
