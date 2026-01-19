@@ -13,7 +13,6 @@ where
 
 import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.STM
-import Control.Exception (finally)
 import Control.Monad (unless)
 import Control.Monad.IO.Class (MonadIO (..))
 import System.IO (hIsTerminalDevice, stdout)
@@ -31,25 +30,26 @@ detectBackend = do
   return $ if isTerm then ansiBackend else plainBackend
 
 -- | Execute the Termflow monad with a specific backend.
-runFlowWith :: Backend -> FlowT IO a -> IO a
+runFlowWith :: MonadIO m => Backend -> FlowT m a -> m a
 runFlowWith backend flow = do
   q <- liftIO newTQueueIO
 
   -- Fork the backend renderer
   tid <- liftIO $ forkIO $ backend q
-
   -- Run the flow logic
-  runFlowT q flow `finally` do
-    -- Wait for the queue to drain before killing the backend
-    atomically $ do
-      empty <- isEmptyTQueue q
-      unless empty retry
-    -- A small grace period or just kill
-    liftIO $ killThread tid
+  result <- runFlowT q flow
+  -- Wait for the queue to drain before killing the backend
+  liftIO $ atomically $ do
+    empty <- isEmptyTQueue q
+    unless empty retry
+  -- A small grace period or just kill
+  liftIO $ killThread tid
+
+  return result
 
 -- | Execute the Termflow monad.
 -- Automatically detects the best backend for the current environment.
-runFlow :: FlowT IO a -> IO a
+runFlow :: MonadIO m => FlowT m a -> m a
 runFlow flow = do
-  backend <- detectBackend
+  backend <- liftIO detectBackend
   runFlowWith backend flow
