@@ -1,0 +1,99 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.1.
+--
+-- see: https://github.com/sol/hpack
+
+name:           termflow
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/termflow#readme>
+homepage:       https://github.com/skiars/termflow#readme
+bug-reports:    https://github.com/skiars/termflow/issues
+author:         Skiars
+maintainer:     skiars@example.com
+copyright:      2026 Skiars
+license:        BSD-3-Clause
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/skiars/termflow
+
+library
+  exposed-modules:
+      Termflow
+      Termflow.Backend
+      Termflow.Backend.ANSI
+      Termflow.Backend.Plain
+      Termflow.Class
+      Termflow.Core
+      Termflow.Format
+      Termflow.Types
+  other-modules:
+      Paths_termflow
+  autogen-modules:
+      Paths_termflow
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      ansi-terminal
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , extra >=1.7
+    , mtl
+    , stm
+    , text
+    , text-conversions
+  default-language: Haskell2010
+
+executable termflow-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_termflow
+  autogen-modules:
+      Paths_termflow
+  hs-source-dirs:
+      app
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      ansi-terminal
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , extra >=1.7
+    , mtl
+    , process
+    , stm
+    , termflow
+    , text
+    , text-conversions
+  default-language: Haskell2010
+
+test-suite termflow-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_termflow
+  autogen-modules:
+      Paths_termflow
+  hs-source-dirs:
+      test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      ansi-terminal
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , extra >=1.7
+    , mtl
+    , stm
+    , termflow
+    , text
+    , text-conversions
+  default-language: Haskell2010
