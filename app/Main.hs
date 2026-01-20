@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Main (main) where
 
@@ -155,7 +156,7 @@ demonstrateCallbacks = step "Demonstrating IO Callbacks" $ do
     liftIO $ simulatedExternalLibrary run
   info "Callback demonstration complete."
 
-simulatedExternalLibrary :: (FlowT IO () -> IO ()) -> IO ()
+simulatedExternalLibrary :: MonadFlow m => RunFlowIO m -> IO ()
 simulatedExternalLibrary runner = do
   threadDelay 500000
   runner $ info $ blue "  [Callback] " <> "Inside IO, talking to Termflow!"

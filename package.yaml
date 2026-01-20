@@ -26,6 +26,7 @@ dependencies:
 - bytestring
 - text
 - mtl
+- transformers
 - stm
 - text-conversions
 - unliftio-core

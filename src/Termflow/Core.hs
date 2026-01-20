@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Termflow.Core
@@ -11,6 +12,7 @@ module Termflow.Core
     MonadUnliftIO,
     runFlowT,
     withRunFlow,
+    askRunFlow,
   )
 where
 
@@ -61,6 +63,11 @@ runFlowT q (FlowT m) = runReaderT m q
 withRunFlow ::
   (MonadUnliftIO m, MonadFlow m) => (RunFlowIO m -> IO b) -> m b
 withRunFlow = withRunInIO
+
+-- | Capture the current flow runner to execute flow actions within the underlying monad.
+askRunFlow ::
+  (MonadUnliftIO m, MonadFlow m) => m (RunFlowIO m)
+askRunFlow = withRunInIO (\run -> (return (\ma -> run ma)))
 
 -- | Helper to emit an event
 emit :: (MonadIO m) => FlowEvent -> FlowT m ()
