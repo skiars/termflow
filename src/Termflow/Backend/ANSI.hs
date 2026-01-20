@@ -70,26 +70,46 @@ processEvent ref ev = do
               (newG : newRest) -> state {rsStack = newG {gsWarnings = gsWarnings newG ++ [msg]} : newRest}
               [] -> state
         [] -> putRichLn msg
-    EvGroupStart gType title mTag -> do
-      case stack of
-        [] -> do
-          RenderState _ lastWasProgress <- readIORef ref
-          when lastWasProgress $ do
-            cursorUpLine 1
-            clearLine
-        _ -> return ()
 
-      putRichLn $ formatHeader gType "[-] " mTag title
-      modifyIORef' ref $ \state -> state {rsStack = GroupState 1 title [] False [] mTag gType : rsStack state, rsLastWasProgress = False}
+    EvGroupStart gType title mTag -> do
+      clearLastLineIfProgress ref
+
+      let header = if title == Placeholder then Placeholder else formatHeader gType "[-] " mTag title
+      putRichLn header
+      let initialLines = if title == Placeholder then 0 else 1
+      modifyIORef' ref $ \state -> state {rsStack = GroupState initialLines title [] False [] mTag gType : rsStack state, rsLastWasProgress = False}
+
     EvUpdateMessage msg -> do
       case stack of
-        (g@(GroupState count _ _ _ _ mTag gType) : rest) -> do
-          cursorUpLine count
-          clearLine
-          putRichLn $ formatHeader gType "[-] " mTag msg
-          when (count > 1) $ cursorDownLine (count - 1)
-          modifyIORef' ref $ \state -> state {rsStack = g {gsTitle = msg} : rest}
+        (g@(GroupState count title _ _ _ mTag gType) : rest) -> do
+          let oldVisible = title /= Placeholder
+              newVisible = msg /= Placeholder
+
+          if oldVisible == newVisible
+            then do
+              when oldVisible $ do
+                cursorUpLine count
+                clearLine
+                putRichLn $ formatHeader gType "[-] " mTag msg
+                when (count > 1) $ cursorDownLine (count - 1)
+              modifyIORef' ref $ \state -> state {rsStack = g {gsTitle = msg} : rest}
+            else if oldVisible
+              then do
+                -- Visible -> Hidden
+                cursorUpLine count
+                -- TIO.putStr "\ESC[1M"
+                when (count > 1) $ cursorDownLine (count - 1)
+                modifyIORef' ref $ \state -> state {rsStack = g {gsTitle = msg, gsLines = count - 1} : rest}
+              else do
+                -- Hidden -> Visible
+                cursorUpLine count
+                -- TIO.putStr "\ESC[1L"
+                putRichLn $ formatHeader gType "[-] " mTag msg
+                when (count > 0) $ cursorDownLine count
+                modifyIORef' ref $ \state -> state {rsStack = g {gsTitle = msg, gsLines = count + 1} : rest}
+
         [] -> putRichLn $ "[WARN] setMessage called without active group: " <> msg
+
     EvGroupEnd -> do
       case stack of
         (GroupState count title _ _ warnings mTag gType : rest) -> do
@@ -101,10 +121,11 @@ processEvent ref ev = do
               let isProgress = case gType of
                     GtGroup -> False
                     GtStep -> True
+                  lineDiff = if title == Placeholder then 0 else 1
               putRichLn $ formatHeader gType "[+] " mTag title
               case rest of
                 [] -> modifyIORef' ref $ \state -> state {rsStack = [], rsLastWasProgress = isProgress}
-                _ -> modifyIORef' ref $ \state -> state {rsStack = updateParent rest isProgress}
+                _ -> modifyIORef' ref $ \state -> state {rsStack = updateParent rest isProgress lineDiff}
             else do
               let headerLine = formatHeader gType "[+] " mTag title
               let blockLines = headerLine : warnings
@@ -116,7 +137,7 @@ processEvent ref ev = do
                   let newWarnings = gsWarnings parent ++ blockLines
                   let newParent =
                         parent
-                          { gsLines = gsLines parent + length blockLines,
+                          { gsLines = gsLines parent + blockLineCount blockLines,
                             gsBuffer = newBuffer,
                             gsWarnings = newWarnings
                           }
@@ -130,40 +151,59 @@ addToGroup :: IORef RenderState -> RichText -> Bool -> IO ()
 addToGroup ref msg isProgress = do
   st <- readIORef ref
   case rsStack st of
-    (g@(GroupState count _ buffer lastWasProgress _ _ _) : rest) -> do
-      if isProgress && lastWasProgress && not (null buffer)
-        then do
-          cursorUpLine 1
-          clearLine
-          putRichLn msg
-          let newBuffer = init buffer ++ [msg]
-          let newG = g {gsBuffer = newBuffer, gsLastWasProgress = True}
-          modifyIORef' ref $ \state -> state {rsStack = newG : rest}
-        else
-          if count < maxGroupHeight
-            then do
-              putRichLn msg
-              let newG = g {gsLines = count + 1, gsBuffer = buffer ++ [msg], gsLastWasProgress = isProgress}
-              modifyIORef' ref $ \state -> state {rsStack = newG : rest}
-            else do
-              cursorUpLine (count - 1)
-              clearFromCursorToScreenEnd
-              let logCapacity = maxGroupHeight - 1
-              let newBuffer = takeEnd logCapacity (buffer ++ [msg])
-              mapM_ putRichLn newBuffer
-              let newG = g {gsBuffer = newBuffer, gsLastWasProgress = isProgress}
-              modifyIORef' ref $ \state -> state {rsStack = newG : rest}
+    (GroupState _ _ _ lastWasProgress _ _ _ : _) -> do
+      if isProgress && lastWasProgress
+        then clearLastLineIfProgress ref
+        else return ()
+      appendLineToGroup ref msg isProgress
     [] -> do
-      RenderState _ lastWasProgress <- readIORef ref
-      when lastWasProgress $ do
-        cursorUpLine 1
-        clearLine
+      when (rsLastWasProgress st) $ clearLastLineIfProgress ref
       putRichLn msg
       modifyIORef' ref $ \state -> state {rsLastWasProgress = isProgress}
 
-updateParent :: [GroupState] -> Bool -> [GroupState]
-updateParent [] _ = []
-updateParent (g : gs) isProgress = g {gsLines = gsLines g + 1, gsLastWasProgress = isProgress} : gs
+clearLastLineIfProgress :: IORef RenderState -> IO ()
+clearLastLineIfProgress ref = do
+  st <- readIORef ref
+  case rsStack st of
+    (g : rest) -> when (gsLastWasProgress g) $ do
+      cursorUpLine 1
+      clearLine
+      let newBuffer = if null (gsBuffer g) then [] else init (gsBuffer g)
+      let newG = g {gsBuffer = newBuffer, gsLines = gsLines g - 1, gsLastWasProgress = False}
+      modifyIORef' ref $ \state -> state {rsStack = newG : rest}
+    [] -> when (rsLastWasProgress st) $ do
+      cursorUpLine 1
+      clearLine
+      modifyIORef' ref $ \state -> state {rsLastWasProgress = False}
+
+appendLineToGroup :: IORef RenderState -> RichText -> Bool -> IO ()
+appendLineToGroup ref msg isProgress = do
+  st <- readIORef ref
+  case rsStack st of
+    (g@(GroupState count _ buffer _ _ _ _) : rest) -> do
+      if count < maxGroupHeight
+        then do
+          putRichLn msg
+          let newG = g {gsLines = count + 1, gsBuffer = buffer ++ [msg], gsLastWasProgress = isProgress}
+          modifyIORef' ref $ \state -> state {rsStack = newG : rest}
+        else do
+          cursorUpLine (count - 1)
+          clearFromCursorToScreenEnd
+          let logCapacity = maxGroupHeight - 1
+          let newBuffer = takeEnd logCapacity (buffer ++ [msg])
+          mapM_ putRichLn newBuffer
+          let newG = g {gsBuffer = newBuffer, gsLastWasProgress = isProgress}
+          modifyIORef' ref $ \state -> state {rsStack = newG : rest}
+    _ -> return ()
+
+updateParent :: [GroupState] -> Bool -> Int -> [GroupState]
+updateParent [] _ _ = []
+updateParent (g : gs) isProgress lineDiff = g {
+    gsLines = gsLines g + lineDiff, gsLastWasProgress = isProgress
+  } : gs
+
+blockLineCount :: [RichText] -> Int
+blockLineCount = length . filter (/= Placeholder)
 
 takeEnd :: Int -> [a] -> [a]
 takeEnd n xs
@@ -204,9 +244,9 @@ colorSGR (Just (TermColor256 idx)) = [SetPaletteColor Foreground idx]
 
 formatHeader :: GroupType -> RichText -> Maybe RichText -> RichText -> RichText
 formatHeader gType defTag mTag title =
-  let tagged = case mTag of
-        Nothing  -> faint defTag <> title
-        Just tag -> tag <> " " <> title
-  in  case gType of
-        GtGroup -> tagged
+  let tagged = case gType of
+        GtGroup -> faint defTag <> title
         GtStep  -> title
+  in  case mTag of
+        Nothing  -> tagged
+        Just tag -> tag <> " " <> title

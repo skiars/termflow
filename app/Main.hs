@@ -26,9 +26,7 @@ main = do
 app :: FlowT IO ()
 app = do
   info $ green "Initializing Termflow..."
-  group (bold "Setup Environment") setupEnvironment
-  demonstrateCallbacks
-  info $ bold $ green "Done!"
+  compileProject
 
 setupEnvironment :: FlowT IO ()
 setupEnvironment = do
@@ -66,11 +64,12 @@ compileProject :: FlowT IO ()
 compileProject = step "Compiling massive project (Parallel Build)" $ do
   withRunFlow $ \run -> liftIO $ do
     mvars <- replicateM 4 newEmptyMVar
-    forM_ (zip [1 :: Int .. 4] mvars) $ \(tid, mvar) -> forkIO $ do
+    forM_ (zip [1 :: Int .. 8] mvars) $ \(tid, mvar) -> forkIO $ do
       -- Simulate work for this thread
-      forM_ [1 .. 25 :: Int] $ \i -> do
-        threadDelay $ 100000 + (tid * 10000) -- stagger timing slightly
-        run $ info $ "Thread " <> disp tid <> ": Compiling Module " <> bold (disp i)
+      forM_ [1 .. 250 :: Int] $ \i -> do
+        run $ step ("Thread " <> disp tid <> ": Compiling Module " <> bold (disp i)) $ do
+          liftIO $ 
+            threadDelay $ 10000 + (tid * 1000) -- stagger timing slightly
         when (tid == 2 && i == 10) $
           run $ warn $ yellow $ "Thread " <> disp tid <> ": Warning: Module " <> disp i <> " has unused imports."
       run $ info $ green $ "Thread " <> disp tid <> " finished."
@@ -78,6 +77,9 @@ compileProject = step "Compiling massive project (Parallel Build)" $ do
 
     -- Wait for all threads
     mapM_ takeMVar mvars
+  -- forM_ [1 .. 100 :: Int] $ \i -> do
+  --   liftIO $ threadDelay 50000
+  --   step ("Compiling Module " <> disp i) $ pure ()
 
 gitClone :: FlowT IO ()
 gitClone = step "Git Clone (Stream)" $ do
