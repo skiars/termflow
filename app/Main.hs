@@ -3,8 +3,8 @@
 
 module Main (main) where
 
-import Control.Concurrent (threadDelay)
-import Control.Monad (forM_, void, when)
+import Control.Concurrent (forkIO, newEmptyMVar, putMVar, takeMVar, threadDelay)
+import Control.Monad (forM_, replicateM, void, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.String (IsString (..))
 import System.Exit (ExitCode (..))
@@ -63,14 +63,21 @@ downloadExtraLib = step "Downloading extra-lib..." $ do
   liftIO $ threadDelay 500000
 
 compileProject :: FlowT IO ()
-compileProject = step "Compiling massive project (Long Log Scroll)" $ do
-  -- Demonstrate scrolling
-  repeatN 50 $ \i -> do
-    info $ "Compiling Module " <> bold (disp i)
-    liftIO $ threadDelay 100000
-    when (i == 25) $
-      warn $
-        yellow "Warning: Module " <> disp i <> " has unused imports."
+compileProject = step "Compiling massive project (Parallel Build)" $ do
+  withRunFlow $ \run -> liftIO $ do
+    mvars <- replicateM 4 newEmptyMVar
+    forM_ (zip [1 :: Int .. 4] mvars) $ \(tid, mvar) -> forkIO $ do
+      -- Simulate work for this thread
+      forM_ [1 .. 25 :: Int] $ \i -> do
+        threadDelay $ 100000 + (tid * 10000) -- stagger timing slightly
+        run $ info $ "Thread " <> disp tid <> ": Compiling Module " <> bold (disp i)
+        when (tid == 2 && i == 10) $
+          run $ warn $ yellow $ "Thread " <> disp tid <> ": Warning: Module " <> disp i <> " has unused imports."
+      run $ info $ green $ "Thread " <> disp tid <> " finished."
+      putMVar mvar ()
+
+    -- Wait for all threads
+    mapM_ takeMVar mvars
 
 gitClone :: FlowT IO ()
 gitClone = step "Git Clone (Stream)" $ do
