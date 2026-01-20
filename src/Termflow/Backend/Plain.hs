@@ -17,27 +17,20 @@ plainBackend q = loop
   where
     loop = do
       ev <- atomically $ readTQueue q
+
+      let process rt action = case rt of
+            Placeholder -> loop
+            _           -> action >> loop
+
       case ev of
-        EvLog t -> do
-          TIO.putStrLn (stripStyles t)
-          loop
-        EvStream t -> do
-          TIO.putStrLn (stripStyles t)
-          loop
-        EvProgress _ -> do
-          -- Skip progress in plain backend to reduce noise
-          loop
-        EvWarn t -> do
-          TIO.putStrLn $ "[WARN] " <> stripStyles t
-          loop
-        EvGroupStart t -> do
-          TIO.putStrLn $ ">> " <> stripStyles t
-          loop
-        EvGroupEnd -> do
-          loop
-        EvUpdateMessage t -> do
-          TIO.putStrLn $ "   ... " <> stripStyles t
-          loop
+        EvLog t           -> process t $ TIO.putStrLn (stripStyles t)
+        EvStream t        -> process t $ TIO.putStrLn (stripStyles t)
+        EvProgress _      -> loop
+        EvWarn t          -> process t $ TIO.putStrLn $ "[WARN] " <> stripStyles t
+        EvGroupStart t    -> process t $ TIO.putStrLn $ ">> " <> stripStyles t
+        EvGroupEnd        -> loop
+        EvUpdateMessage t -> process t $ TIO.putStrLn $ "   ... " <> stripStyles t
 
 stripStyles :: RichText -> T.Text
 stripStyles (RichText segs) = T.concat $ map segText segs
+stripStyles Placeholder = ""

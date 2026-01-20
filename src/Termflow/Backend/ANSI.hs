@@ -64,14 +64,14 @@ processEvent ref ev = do
               [] -> state
         [] -> putRichLn msg
     EvGroupStart title -> do
-      putRichLn $ "[-] " <> title
+      putRichLn $ faint "[-] " <> title
       modifyIORef' ref $ \state -> state {rsStack = GroupState 1 title [] False [] : rsStack state}
     EvUpdateMessage msg -> do
       case stack of
         (g@(GroupState count _ _ _ _) : rest) -> do
           cursorUpLine count
           clearLine
-          putRichLn $ "[-] " <> msg
+          putRichLn $ faint "[-] " <> msg
           when (count > 1) $ cursorDownLine (count - 1)
           modifyIORef' ref $ \state -> state {rsStack = g {gsTitle = msg} : rest}
         [] -> putRichLn $ "[WARN] setMessage called without active group: " <> msg
@@ -83,10 +83,10 @@ processEvent ref ev = do
 
           if null warnings
             then do
-              putRichLn $ "[+] " <> title
+              putRichLn $ faint "[+] " <> title
               modifyIORef' ref $ \state -> state {rsStack = incrementHead rest}
             else do
-              let headerLine = "[-] " <> title
+              let headerLine = faint "[-] " <> title
               let blockLines = headerLine : warnings
               mapM_ putRichLn blockLines
 
@@ -150,19 +150,28 @@ putRich (RichText segs) = do
     setSGR (styleToSGR sty)
     TIO.putStr t
   setSGR [Reset]
+putRich Placeholder = return ()
 
 putRichLn :: RichText -> IO ()
+putRichLn Placeholder = return ()
 putRichLn rt = putRich rt >> TIO.putStrLn ""
 
 styleToSGR :: Style -> [SGR]
 styleToSGR sty =
   [ Reset,
-    SetConsoleIntensity (if sBold sty then BoldIntensity else NormalIntensity),
+    SetConsoleIntensity
+      ( if sBold sty
+          then BoldIntensity
+          else
+            if sFaint sty
+              then FaintIntensity
+              else NormalIntensity
+      ),
     SetItalicized (sItalic sty),
     SetUnderlining (if sUnderline sty then SingleUnderline else NoUnderline)
-  ]
-    ++ colorSGR (sColor sty)
+  ] <> colorSGR (sColor sty)
 
-colorSGR :: Maybe (ColorIntensity, Color) -> [SGR]
+colorSGR :: Maybe TermColor -> [SGR]
 colorSGR Nothing = []
-colorSGR (Just (i, c)) = [SetColor Foreground i c]
+colorSGR (Just (TermColorBasic i c)) = [SetColor Foreground i c]
+colorSGR (Just (TermColor256 idx)) = [SetPaletteColor Foreground idx]
