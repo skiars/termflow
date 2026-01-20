@@ -30,7 +30,7 @@ import Control.Monad.Error.Class (MonadError)
 import Control.Monad.Fail ()
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.IO.Class
-import Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO)
+import Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO, askRunInIO)
 import Control.Monad.Reader
 import Control.Monad.State.Class (MonadState)
 import Control.Monad.Writer.Class (MonadWriter)
@@ -79,8 +79,8 @@ withRunFlow = withRunInIO
 
 -- | Capture the current flow runner to execute flow actions within the underlying monad.
 askRunFlow ::
-  (MonadUnliftIO m, MonadFlow m) => m (RunFlowIO m)
-askRunFlow = withRunInIO (\run -> (return (\ma -> run ma)))
+  (MonadUnliftIO m, MonadFlow m) => m (m a -> IO a)
+askRunFlow = askRunInIO
 
 -- | Emit an informational log message.
 info :: MonadFlow m => RichText -> m ()
