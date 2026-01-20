@@ -1,8 +1,9 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Termflow.Core
   ( FlowT (..),
@@ -20,10 +21,10 @@ import Control.Monad.Error.Class (MonadError)
 import Control.Monad.Fail ()
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.IO.Class
+import Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO)
 import Control.Monad.Reader
 import Control.Monad.State.Class (MonadState)
 import Control.Monad.Writer.Class (MonadWriter)
-import Control.Monad.IO.Unlift (MonadUnliftIO, withRunInIO)
 import Termflow.Class
 import Termflow.Types
 
@@ -49,14 +50,16 @@ instance (MonadReader r m) => MonadReader r (FlowT m) where
   ask = lift ask
   local f (FlowT m) = FlowT (mapReaderT (local f) m)
 
-type RunFlowIO m b = (forall a. m a -> IO a) -> IO b
+-- | A type alias for a function that can run FlowT actions in IO.
+type RunFlowIO m = forall a. m a -> IO a
 
 -- | Run the FlowT monad
 runFlowT :: TQueue FlowEvent -> FlowT m a -> m a
 runFlowT q (FlowT m) = runReaderT m q
 
 -- | Capture the current flow runner to execute flow actions within the underlying monad.
-withRunFlow :: (MonadUnliftIO m) => RunFlowIO m b -> m b
+withRunFlow ::
+  (MonadUnliftIO m, MonadFlow m) => (RunFlowIO m -> IO b) -> m b
 withRunFlow = withRunInIO
 
 -- | Helper to emit an event
