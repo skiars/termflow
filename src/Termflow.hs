@@ -1,5 +1,5 @@
 module Termflow
-  ( module Termflow.Class,
+  ( MonadFlow, -- dont expose methods directly
     module Termflow.Core,
     module Termflow.Format,
     Backend,
