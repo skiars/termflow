@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Termflow.Backend.ANSI
   ( ansiBackend,
@@ -29,17 +30,23 @@ data GroupState = GroupState
     -- | Whether the last line added was a transient progress line
     gsLastWasProgress :: Bool,
     -- | Accumulated warnings that should be flushed to history upon group exit
-    gsWarnings :: [RichText]
+    gsWarnings :: [RichText],
+    -- | Optional custom tag for the group header
+    gsTag :: Maybe RichText,
+    -- | The type of the group
+    gsType :: GroupType
   }
 
-newtype RenderState = RenderState
+data RenderState = RenderState
   { -- | Stack of active groups
-    rsStack :: [GroupState]
+    rsStack :: [GroupState],
+    -- | Whether the last line output at the top level was a transient progress line
+    rsLastWasProgress :: Bool
   }
 
 ansiBackend :: Backend
 ansiBackend q = do
-  stateRef <- newIORef (RenderState [])
+  stateRef <- newIORef (RenderState [] False)
   forever $ do
     ev <- atomically $ readTQueue q
     processEvent stateRef ev
@@ -63,30 +70,43 @@ processEvent ref ev = do
               (newG : newRest) -> state {rsStack = newG {gsWarnings = gsWarnings newG ++ [msg]} : newRest}
               [] -> state
         [] -> putRichLn msg
-    EvGroupStart title -> do
-      putRichLn $ faint "[-] " <> title
-      modifyIORef' ref $ \state -> state {rsStack = GroupState 1 title [] False [] : rsStack state}
+    EvGroupStart gType title mTag -> do
+      case stack of
+        [] -> do
+          RenderState _ lastWasProgress <- readIORef ref
+          when lastWasProgress $ do
+            cursorUpLine 1
+            clearLine
+        _ -> return ()
+
+      putRichLn $ formatHeader gType "[-] " mTag title
+      modifyIORef' ref $ \state -> state {rsStack = GroupState 1 title [] False [] mTag gType : rsStack state, rsLastWasProgress = False}
     EvUpdateMessage msg -> do
       case stack of
-        (g@(GroupState count _ _ _ _) : rest) -> do
+        (g@(GroupState count _ _ _ _ mTag gType) : rest) -> do
           cursorUpLine count
           clearLine
-          putRichLn $ faint "[-] " <> msg
+          putRichLn $ formatHeader gType "[-] " mTag msg
           when (count > 1) $ cursorDownLine (count - 1)
           modifyIORef' ref $ \state -> state {rsStack = g {gsTitle = msg} : rest}
         [] -> putRichLn $ "[WARN] setMessage called without active group: " <> msg
     EvGroupEnd -> do
       case stack of
-        (GroupState count title _ _ warnings : rest) -> do
+        (GroupState count title _ _ warnings mTag gType : rest) -> do
           cursorUpLine count
           clearFromCursorToScreenEnd
 
           if null warnings
             then do
-              putRichLn $ faint "[+] " <> title
-              modifyIORef' ref $ \state -> state {rsStack = incrementHead rest}
+              let isProgress = case gType of
+                    GtGroup -> False
+                    GtStep -> True
+              putRichLn $ formatHeader gType "[+] " mTag title
+              case rest of
+                [] -> modifyIORef' ref $ \state -> state {rsStack = [], rsLastWasProgress = isProgress}
+                _ -> modifyIORef' ref $ \state -> state {rsStack = updateParent rest isProgress}
             else do
-              let headerLine = faint "[-] " <> title
+              let headerLine = formatHeader gType "[+] " mTag title
               let blockLines = headerLine : warnings
               mapM_ putRichLn blockLines
 
@@ -103,14 +123,14 @@ processEvent ref ev = do
 
                   modifyIORef' ref $ \state -> state {rsStack = newParent : grandparents}
                 [] -> do
-                  modifyIORef' ref $ \state -> state {rsStack = []}
+                  modifyIORef' ref $ \state -> state {rsStack = [], rsLastWasProgress = False}
         [] -> return ()
 
 addToGroup :: IORef RenderState -> RichText -> Bool -> IO ()
 addToGroup ref msg isProgress = do
   st <- readIORef ref
   case rsStack st of
-    (g@(GroupState count _ buffer lastWasProgress _) : rest) -> do
+    (g@(GroupState count _ buffer lastWasProgress _ _ _) : rest) -> do
       if isProgress && lastWasProgress && not (null buffer)
         then do
           cursorUpLine 1
@@ -133,11 +153,17 @@ addToGroup ref msg isProgress = do
               mapM_ putRichLn newBuffer
               let newG = g {gsBuffer = newBuffer, gsLastWasProgress = isProgress}
               modifyIORef' ref $ \state -> state {rsStack = newG : rest}
-    [] -> putRichLn msg
+    [] -> do
+      RenderState _ lastWasProgress <- readIORef ref
+      when lastWasProgress $ do
+        cursorUpLine 1
+        clearLine
+      putRichLn msg
+      modifyIORef' ref $ \state -> state {rsLastWasProgress = isProgress}
 
-incrementHead :: [GroupState] -> [GroupState]
-incrementHead [] = []
-incrementHead (g : gs) = g {gsLines = gsLines g + 1} : gs
+updateParent :: [GroupState] -> Bool -> [GroupState]
+updateParent [] _ = []
+updateParent (g : gs) isProgress = g {gsLines = gsLines g + 1, gsLastWasProgress = isProgress} : gs
 
 takeEnd :: Int -> [a] -> [a]
 takeEnd n xs
@@ -175,3 +201,12 @@ colorSGR :: Maybe TermColor -> [SGR]
 colorSGR Nothing = []
 colorSGR (Just (TermColorBasic i c)) = [SetColor Foreground i c]
 colorSGR (Just (TermColor256 idx)) = [SetPaletteColor Foreground idx]
+
+formatHeader :: GroupType -> RichText -> Maybe RichText -> RichText -> RichText
+formatHeader gType defTag mTag title =
+  let tagged = case mTag of
+        Nothing  -> faint defTag <> title
+        Just tag -> tag <> " " <> title
+  in  case gType of
+        GtGroup -> tagged
+        GtStep  -> title

@@ -27,7 +27,11 @@ plainBackend q = loop
         EvStream t        -> process t $ TIO.putStrLn (stripStyles t)
         EvProgress _      -> loop
         EvWarn t          -> process t $ TIO.putStrLn $ "[WARN] " <> stripStyles t
-        EvGroupStart t    -> process t $ TIO.putStrLn $ ">> " <> stripStyles t
+        EvGroupStart _ t mTag ->
+          let prefix = case mTag of
+                Nothing -> ">> "
+                Just tag -> stripStyles tag <> " "
+           in process t $ TIO.putStrLn $ prefix <> stripStyles t
         EvGroupEnd        -> loop
         EvUpdateMessage t -> process t $ TIO.putStrLn $ "   ... " <> stripStyles t
 

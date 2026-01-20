@@ -18,7 +18,9 @@ module Termflow.Core
     stream,
     progress,
     group,
+    group',
     step,
+    step',
     setMessage,
   )
 where
@@ -107,11 +109,31 @@ setMessage t = emit (EvUpdateMessage t)
 -- | Start a new group of log messages.
 group :: MonadFlow m => RichText -> m a -> m a
 group title action = do
-  emit (EvGroupStart title)
+  emit (EvGroupStart GtGroup title Nothing)
+  res <- action
+  emit EvGroupEnd
+  return res
+
+-- | Start a new group of log messages with a custom tag.
+group' :: MonadFlow m => RichText -> RichText -> m a -> m a
+group' tag title action = do
+  emit (EvGroupStart GtGroup title (Just tag))
   res <- action
   emit EvGroupEnd
   return res
 
 -- | Start a new step in the flow, just an alias for 'group'.
 step :: MonadFlow m => RichText -> m a -> m a
-step = group
+step title action = do
+  emit (EvGroupStart GtStep title Nothing)
+  res <- action
+  emit EvGroupEnd
+  return res
+
+-- | Start a new step in the flow with a custom tag.
+step' :: MonadFlow m => RichText -> RichText -> m a -> m a
+step' tag title action = do
+  emit (EvGroupStart GtStep title (Just tag))
+  res <- action
+  emit EvGroupEnd
+  return res
